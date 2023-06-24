@@ -1,0 +1,183 @@
+----------------------------------------1--------------------------------------------
+
+Using the database WideWorldImporters, write a SQL query which reports the consistency between orders and their attached invoices.
+The resultset should report for each (CustomerID, CustomerName)
+ a. the total number of orders: TotalNBOrders
+ b. the number of invoices converted from an order: TotalNBInvoices
+ c. the total value of orders: OrdersTotalValue
+ d. the total value of invoices: InvoicesTotalValue
+ f. the absolute value of the difference between c - d: AbsoluteValueDifference
+ 
+ The resultset must be sorted by highest values of AbsoluteValueDifference, then by smallest to highest values of TotalNBOrders and CustomerName is that order.
+ 
+ Please note that all values in a & b must be identical by definition of the query, as we are observing orders converted into invoices.
+We are looking for potential differences between c & d.
+BUT, you must find them consistent as the data is clean in WideWorldImporters.
+
+______________________________
+
+
+WITH 
+TotalOrders AS 
+(
+	SELECT
+		OL.OrderID AS OrderID,
+		SUM(OL.Quantity * OL.UnitPrice) AS TotalOder
+	FROM WideWorldImporters.Sales.OrderLines AS OL
+	GROUP BY OL.OrderID
+),
+
+TotalInvoices AS 
+(
+	SELECT
+		IL.InvoiceID AS InvoiceID,
+		SUM(IL.Quantity * IL.UnitPrice) AS TotalInvoice
+	FROM WideWorldImporters.Sales.InvoiceLines AS IL
+	GROUP BY IL.InvoiceID
+)
+
+SELECT
+	O.CustomerID,
+	C.CustomerName,
+	COUNT(O.OrderID) AS TotalNBOrders,
+	COUNT(I.OrderID) AS TotalNBInvoices,
+	SUM(TotalOder) AS OrdersTotalValue,
+	SUM(TotalInvoice) AS InvoicesTotalValue,
+	ABS(SUM(TotalOder) - SUM(TotalInvoice)) AS AbsoluteValueDifference
+
+FROM
+	WideWorldImporters.Sales.Orders AS O,
+	TotalOrders AS TO1,
+	WideWorldImporters.Sales.Invoices AS I,
+	TotalInvoices AS TI2,
+	WideWorldImporters.Sales.Customers AS C
+
+WHERE
+	O.CustomerID = C.CustomerID
+	AND O.OrderID = I.OrderID
+	AND O.OrderID = TO1.OrderID
+	AND I.InvoiceID = TI2.InvoiceID
+
+GROUP BY O.CustomerID, C.CustomerName
+ORDER BY AbsoluteValueDifference DESC, TotalNBOrders, C.CustomerName
+
+
+----------------------------------------2--------------------------------------------
+
+For the CustomerId = 1060 (CustomerName = 'Anand Mudaliyar')
+Identify the first InvoiceLine of his first Invoice, where "first" means the lowest respective IDs, and write an update query increasing the UnitPrice of this InvoiceLine by 20.
+
+A re-run of the query in Q1 gives the resultset in Q2-Resultset_Corrected.csv (corrected on 15th April 2018 - Summed values in columns OrdersTotalValue & InvoicesTotalValue were incorrect) .
+
+If you haven't managed to answer Q1, add the following selection query to the previous update query: CustomerId, CustomerName, InvoiceTotal.
+The latter is the sum of all invoice lines for the target invoice.
+
+______________________________
+
+-- 1. Identify the first InvoiceLine of the customerID 1060
+
+USE WideWorldImporters
+
+SELECT I.CustomerID, 
+			 I.InvoiceID,
+			 Il.InvoiceLineID, 
+			 Il.Quantity, 
+			 Il.UnitPrice
+
+FROM Sales.Invoices as I,
+		 Sales.InvoiceLines as Il
+
+WHERE I.InvoiceID = Il.InvoiceID AND I.CustomerID = 1060
+
+ORDER BY I.InvoiceID, Il.InvoiceLineID
+
+-- 2. Modify the UnitPrice of this InvoiceLine by adding 20
+
+UPDATE Sales.InvoiceLines
+SET UnitPrice = 260
+WHERE InvoiceLineID = 225394
+
+-- 3. Verify the new UnitPrice of the target InvoiceLine by re-running step 1 
+
+-- 4. Then re-run the query in order to have the resultset 
+
+
+
+----------------------------------------3--------------------------------------------
+
+In the database WideWorldImporters, write a SQL query which reports the highest loss of money from orders not being converted into invoices, by customer category.
+
+The name and id of the customer who generated this highest loss must also be identified. The resultset is ordered by highest loss.
+
+You should be able to write it in pure SQL, but if too challenging, you may use T-SQL and cursors.
+
+______________________________
+
+
+WITH AllLoss AS 
+(
+
+		SELECT Cat.CustomerCategoryName,
+		Cu.CustomerID,
+		Cu.CustomerName,
+		SUM (OL.UnitPrice * OL.Quantity) AS 'MaxLoss'
+		
+		FROM Sales.Orders AS O,
+		Sales.Customers AS Cu,
+		Sales.CustomerCategories AS Cat,
+		Sales.OrderLines AS OL
+		
+		WHERE NOT EXISTS
+		(
+			SELECT *
+			FROM Sales.Invoices AS I
+			WHERE I.OrderID = O.OrderID
+		)
+		
+		AND O.CustomerID = Cu.CustomerID
+		AND Cu.CustomerCategoryID = Cat.CustomerCategoryID
+		AND O.OrderID = OL.OrderID
+		
+		GROUP BY Cat.CustomerCategoryName, Cu.CustomerName, Cu.CustomerID
+)
+
+SELECT L1.CustomerCategoryName,
+L1.MaxLoss,
+L1.CustomerName,
+L1.CustomerID
+
+FROM AllLoss as L1
+
+JOIN (
+	SELECT
+	L.CustomerCategoryName,
+	MAX(L.MaxLoss) AS TotalLoss
+	FROM AllLoss AS L
+	GROUP BY L.CustomerCategoryName
+) AS L2
+ON L1.CustomerCategoryName = L2.CustomerCategoryName AND L1.MaxLoss = L2.TotalLoss
+
+
+ORDER BY L1.MaxLoss DESC
+
+
+
+
+----------------------------------------4--------------------------------------------
+In the database SQLPlayground, write a SQL query selecting all the customers' data who have purchased all the products AND have bought more than 50 products in total (sum of all purchases).
+
+______________________________
+
+USE SQLPlayground
+SELECT *
+FROM dbo.Customer as Cu
+
+-- Select all the customers' data who have purchased all the products
+WHERE (SELECT COUNT(DISTINCT ProductId)
+       FROM dbo.Purchase as Pu
+       WHERE Pu.CustomerId = Cu.CustomerId) = (SELECT COUNT(*) FROM dbo.Product)
+
+-- Select all the customers who have bought more than 50 products in total
+AND (SELECT SUM(Qty)
+     FROM dbo.Purchase as Pu
+     WHERE Pu.CustomerId = Cu.CustomerId) > 50
